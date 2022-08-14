@@ -8,6 +8,7 @@ import numpy as np
 import json
 import os
 import tqdm
+import glob
 from urllib.request import urlretrieve
 import threading
 
@@ -38,16 +39,29 @@ def _read_json(opt):
     categories = data['categories']
     return images, annotations, categories
 
-def _delete_and_download_images(opt, images):
-    LOGGER.info('Deleting results folder')
-    RESULTS = Path.resolve(opt.results)
 
-    # # Delete dataset
+def download_dataset(opt, images, annotations, categories):
+    # Internal function for threaded images download.
+
+    LOGGER.info('Deleting downloads folder')
+    RESULTS = Path.resolve(opt.results)
+    DOWNLOAD = Path('download')
+
+    # Delete dataset
+    if os.path.exists(DOWNLOAD):
+        shutil.rmtree(DOWNLOAD, ignore_errors=True)
+
     if os.path.exists(RESULTS):
         shutil.rmtree(RESULTS, ignore_errors=True)
 
+
     # Create yolov5 directory structure
     LOGGER.info('Create results yolov5 folder structure')
+    os.makedirs(DOWNLOAD)
+    os.makedirs(DOWNLOAD/'train')
+    os.makedirs(DOWNLOAD/'train/images')
+    os.makedirs(DOWNLOAD/'train/labels')
+
     os.makedirs(RESULTS)
     os.makedirs(RESULTS/'train')
     os.makedirs(RESULTS/'train/images')
@@ -66,7 +80,7 @@ def _delete_and_download_images(opt, images):
         image = images[image_id]
 
         # image['name'], image['url']
-        img_abspath = RESULTS / f'train/images/{image["name"]}'
+        img_abspath = DOWNLOAD / f'train/images/{image["name"]}'
         t = threading.Thread(target=_download_file_per_thread, args=(image['url'], img_abspath))
         t.daemon = True
         threads.append(t)
@@ -78,11 +92,13 @@ def _delete_and_download_images(opt, images):
                 t.join()
             threads = []
 
-def download_dataset(opt, images, annotations, categories):
-    # Internal function for threaded images download.
+    LOGGER.info(f'✅ Download complete: {DOWNLOAD}')
 
+
+def create_complete_dataset(opt, images, annotations, categories):
+
+    DOWNLOAD = Path('download')
     RESULTS = Path.resolve(opt.results)
-    _delete_and_download_images(opt, images)
 
     # Create image dict
     # images = {'%g' % x['id']: x for x in annotations}
@@ -105,7 +121,7 @@ def download_dataset(opt, images, annotations, categories):
     for x in tqdm.tqdm(annotations):
         img = images[x['image_id']]
 
-        f = RESULTS / 'train/labels' / img['name']
+        f = DOWNLOAD / 'train/labels' / img['name']
 
         # The COCO box format is [top left x, top left y, width, height]
         box = np.array(x['bbox'], dtype=np.float64)
@@ -128,16 +144,46 @@ def download_dataset(opt, images, annotations, categories):
     # labels = ['shelf', 'bottle', 'void']
     labels = [cat['name'] for cat in categories]
     labels_cnt = len(labels)
+    labels = json.dumps(labels)
     yaml_data = [
-        f'train: "{RESULTS.name}/train"\n',
-        f'val: "{RESULTS.name}/valid"\n',
+        f'train: {RESULTS.name}/train\n',
+        f'val: {RESULTS.name}/valid\n\n',
         f'nc: {labels_cnt}\n',
         f'names: {labels}\n'
     ]
     with open(RESULTS/'data.yaml', 'w') as f:
         f.writelines(yaml_data)
 
-    LOGGER.info(f'✅ Results available at: {RESULTS}')
+    # Split dataset between train & val
+    LOGGER.info('Splitting dataset')
+    for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
+        result_image_fname = image_fname.replace(DOWNLOAD.name, RESULTS.name)
+        ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
+        result_ann_fname = ann_fname.replace(DOWNLOAD.name, RESULTS.name)
+
+        if (not os.path.exists(image_fname) or
+            not os.path.exists(ann_fname)):
+            LOGGER.error(f'Image/Annotation does not exist: {image_fname}: {ann_fname}')
+
+        rand_num = random.random()
+        if rand_num < 0.2:
+            val_image_fname = result_image_fname.replace('train/', 'valid/')
+            val_ann_fname = result_ann_fname.replace('train/', 'valid/')
+            shutil.copy(image_fname, val_image_fname)
+            shutil.copy(ann_fname, val_ann_fname)
+        else:
+            shutil.copy(image_fname, result_image_fname)
+            shutil.copy(ann_fname, result_ann_fname)
+
+
+    LOGGER.info(f'✅ Yolov5 Dataset creation complete: {RESULTS}')
+
+def create_shelf_dataset(opt, images, annotations, categories):
+    pass
+
+def create_object_dataset(opt, images, annotations, categories):
+    pass
+
 
 def main(opt):
     if opt.aml_json is not None and os.path.exists(opt.aml_json):
@@ -146,26 +192,39 @@ def main(opt):
         LOGGER.error('Unable to find JSON file: {}'.format(opt.aml_json))
         return -1
 
+    # Check if any actions are specified.
+    if not (opt.download_images or opt.create_dataset or opt.create_shelf_dataset or opt.create_object_dataset) is True:
+        LOGGER.info('Error: no actions specify.')
+        return -1
+
     # Read the data information
     images, annotations, categories = _read_json(opt)
 
-    if opt.force_download is True:
+    if opt.download_images is True:
         download_dataset(opt, images, annotations, categories)
+
+    if opt.create_dataset is True:
+        create_complete_dataset(opt, images, annotations, categories)
+
+    if opt.create_shelf_dataset is True:
+        create_shelf_dataset(opt, images, annotations, categories)
+
+    if opt.create_object_dataset is True:
+        create_object_dataset(opt, images, annotations, categories)
+
 
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--aml-json', type=str, default=ROOT/'azure-export-data.json', help='Path to input JSON file')
-    parser.add_argument('--force-download', action='store_true', help=' Force re-download of images based on JSON')
-    parser.add_argument('--shelf-dataset', action='store_true', help='Create shelf-dataset')
-    parser.add_argument('--object-dataset', action='store_true', help='Create object-dataset')
+    parser.add_argument('--download-images', action='store_true', help='Download images specified in JSON')
+    parser.add_argument('--create-dataset', action='store_true', help='Create complete yolov5 dataset (all classes)')
+    parser.add_argument('--create-shelf-dataset', action='store_true', help='Create shelf-dataset')
+    parser.add_argument('--create-object-dataset', action='store_true', help='Create object-dataset')
     parser.add_argument('--results', type=str, default=ROOT/'results', help='Results dataset location.')
     parser.add_argument('--threads', type=int, default=100, help='Download dataset max threads')
     opt = parser.parse_args()
-    opt.force_download=True  # Debugging only.
-    opt.threads = 200
     return opt
-
 
 if __name__ == '__main__':
     opt = parse_opt()
