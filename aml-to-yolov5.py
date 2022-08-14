@@ -11,6 +11,7 @@ import tqdm
 import glob
 from urllib.request import urlretrieve
 import threading
+import csv
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -179,7 +180,70 @@ def create_complete_dataset(opt, images, annotations, categories):
     LOGGER.info(f'✅ Yolov5 Dataset creation complete: {RESULTS}')
 
 def create_shelf_dataset(opt, images, annotations, categories):
-    pass
+    # Basically creating shelf dataset is similar to creating entire dataset.
+    # We just need to ignore all the object annotations. We will only focus on
+    # Shelf annotations.
+    DOWNLOAD = Path('download')
+    RESULTS = Path('shelf-dataset')
+
+    if os.path.exists(RESULTS):
+        shutil.rmtree(RESULTS, ignore_errors=True)
+    os.makedirs(RESULTS)
+    os.makedirs(RESULTS/'train')
+    os.makedirs(RESULTS/'train/images')
+    os.makedirs(RESULTS/'train/labels')
+    os.makedirs(RESULTS/'valid')
+    os.makedirs(RESULTS/'valid/images')
+    os.makedirs(RESULTS/'valid/labels')
+
+    for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
+        ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
+        result_image_fname = image_fname.replace(DOWNLOAD.name, RESULTS.name)
+        result_ann_fname = ann_fname.replace(DOWNLOAD.name, RESULTS.name)
+
+        if (not os.path.exists(image_fname) or
+            not os.path.exists(ann_fname)):
+            LOGGER.error(f'Image/Annotation does not exist: {image_fname}: {ann_fname}')
+
+        image_annotations = []
+        with open(ann_fname, 'r') as f:
+            ann_csv = csv.reader(f, delimiter=' ')
+            for row in ann_csv:
+                # Only consider shelf class
+                if len(row) > 4 and int(row[0]) == 5:
+                    row[0] = 1
+                    image_annotations.append(row)
+
+        rand_num = random.random()
+        if rand_num < 0.2:
+            val_image_fname = result_image_fname.replace('train/', 'valid/')
+            val_ann_fname = result_ann_fname.replace('train/', 'valid/')
+            shutil.copy(image_fname, val_image_fname)
+            with open(val_ann_fname, 'w') as f:
+                csvwriter = csv.writer(f)
+                csvwriter.writerows(image_annotations)
+        else:
+            shutil.copy(image_fname, result_image_fname)
+            with open(result_ann_fname, 'w') as f:
+                csvwriter = csv.writer(f)
+                csvwriter.writerows(image_annotations)
+
+    # Write data.yaml file
+    LOGGER.info('Writing data.yaml')
+    labels = ['background', 'shelf']
+    labels_cnt = len(labels)
+    labels = json.dumps(labels)
+    yaml_data = [
+        f'train: {RESULTS.name}/train\n',
+        f'val: {RESULTS.name}/valid\n\n',
+        f'nc: {labels_cnt}\n',
+        f'names: {labels}\n'
+    ]
+    with open(RESULTS/'data.yaml', 'w') as f:
+        f.writelines(yaml_data)
+
+    LOGGER.info(f'✅ Yolov5 Shelf dataset creation complete: {RESULTS}')
+
 
 def create_object_dataset(opt, images, annotations, categories):
     pass
@@ -224,6 +288,7 @@ def parse_opt():
     parser.add_argument('--results', type=str, default=ROOT/'results', help='Results dataset location.')
     parser.add_argument('--threads', type=int, default=100, help='Download dataset max threads')
     opt = parser.parse_args()
+    opt.create_shelf_dataset = True
     return opt
 
 if __name__ == '__main__':
