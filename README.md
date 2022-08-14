@@ -1,57 +1,45 @@
-# Azure ML to Yolov5 Model Creation
+# Azure ML to Yolov5 Pipeline.
 
-## Download Data
-
-- Go to Azure ML studio and export the dataset as a COCO JSON format.
-
-- Once downloaded, rename the file as `azure-export-data.json` and put it in this directory.
-
-- Activate the conda environment where your conda/venv dependencies are installed. For example:
+## Usage
 
 ```bash
-conda activate harsh
+$ python3 aml-to-yolov5.py --help
+usage: aml-to-yolov5.py [-h] [--aml-json AML_JSON] [--force-download] [--shelf-dataset] [--object-dataset] [--results RESULTS] [--threads THREADS]
+
+optional arguments:
+  -h, --help           show this help message and exit
+  --aml-json AML_JSON  Path to input JSON file
+  --force-download     Force re-download of images based on JSON
+  --shelf-dataset      Create shelf-dataset
+  --object-dataset     Create object-dataset
+  --results RESULTS    Results dataset location.
+  --threads THREADS    Download dataset max threads
 ```
 
-- Run this command:
+- A starting JSON file is needed to start this pipeline. This can be downloaded via Azure Machine Learning Studio - and export the dataset as a COCO JSON Format. Please make sure the Blob Storage provides anonymous read access to the images.
+
+- Run this command to download all the images.
 
 ```bash
-python3 aml-to-yolov5.py
+python3 aml-to-yolov5.py --aml-json aml-export.json --download-images
 ```
 
-- Yolov5 formatted dataset will be available under `results` folder.
-
-## Train yolov5 model
-
-- Clone yolov5 folder
+- Run this command to create Yolov5 annotations
 
 ```bash
-cd ..
-git clone https://github.com/ultralytics/yolov5.git yolov5-06-29
+python3 aml-to-yolov5.py --aml-json aml-export.json --annotate
 ```
 
-- Move the results dataset into yolov5 folder.
+- Run this command to create a shelf dataset
 
 ```bash
-mv azure-ml-to-yolo5/results yolov5-06-29/beverages-06-29
+python3 aml-to-yolov5.py --aml-json aml-export.json --create-shelf-dataset
 ```
 
-- Rename the training/validation set location names in data.yaml file.
+- Run this command to create an object model dataset (shelves are cropped, and object bounding boxes are normalized)
 
 ```bash
-train: "results/train"
-val: "results/valid"
-
-to:
-
-train: "beverages-06-29/train"
-val: "beverages-06-29/valid"
+python3 aml-to-yolov5.py --aml-json aml-export.json --create-object-dataset
 ```
 
-- Train the model
-
-```bash
-cd yolov5-06-29
-python3 train.py --data beverages-06-29/data.yaml --cfg models/yolov5s.yaml --weights yolov5s.pt --batch-size 64 --device 0 --epochs 120
-```
-
-- Evaluate performance on wandb.
+- The results are alwyas in specified locations (Full dataset: `results`, Shelf dataset: `shelf-dataset`, Object dataset: `object-dataset`)
