@@ -287,6 +287,9 @@ def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
     return y
 
 def _process_img_obj_dataset(image_fname):
+    DOWNLOAD = Path('download')
+    RESULTS = Path('object-dataset')
+
     ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
     if (not os.path.exists(image_fname) or
         not os.path.exists(ann_fname)):
@@ -334,14 +337,15 @@ def _process_img_obj_dataset(image_fname):
 
         rand_num = random.random()
         if rand_num < 0.2:
-            val_image_fname = shelf_img_fname.replace('train/', 'valid/')
-            val_ann_fname = shelf_ann_fname.replace('train/', 'valid/')
+            val_image_fname = shelf_img_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
+            val_ann_fname = shelf_ann_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
             shelf_image.save(val_image_fname)
             np.savetxt(val_ann_fname, shelf_annotations, delimiter=' ')
         else:
+            shelf_img_fname = shelf_img_fname.replace(DOWNLOAD.name, RESULTS.name)
+            shelf_ann_fname = shelf_ann_fname.replace(DOWNLOAD.name, RESULTS.name)
             shelf_image.save(shelf_img_fname)
             np.savetxt(shelf_ann_fname, shelf_annotations, delimiter=' ')
-
 
 def create_object_dataset(opt):
     # Creating object dataset is tricky.
@@ -365,7 +369,7 @@ def create_object_dataset(opt):
     LOGGER.info('Creating object/void dataset')
 
     with multiprocessing.Pool(processes=4) as pool:
-        pool.map(_process_img_obj_dataset, glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg'))
+        pool.map(_process_img_obj_dataset, tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')))
 
     # Write data.yaml file
     LOGGER.info('Writing data.yaml')
@@ -395,7 +399,7 @@ def main(opt):
         return -1
 
     # Check if any actions are specified.
-    if not (opt.download_images or opt.create_dataset or opt.create_shelf_dataset or opt.create_object_dataset) is True:
+    if not (opt.download_images or opt.create_shelf_dataset or opt.create_object_dataset) is True:
         LOGGER.info('Error: no actions specify.')
         return -1
 
@@ -415,13 +419,12 @@ def main(opt):
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--json', type=str, default=ROOT/'azure-export-data.json', help='Path to input JSON file')
+    parser.add_argument('--json', type=str, default=ROOT/'data.json', help='Path to input JSON file')
     parser.add_argument('--clean', action='store_true', help='Clean all past datasets')
     parser.add_argument('--download-images', action='store_true', help='Download images specified in JSON')
     parser.add_argument('--create-shelf-dataset', action='store_true', help='Create shelf-dataset')
     parser.add_argument('--create-object-dataset', action='store_true', help='Create object-dataset')
-    parser.add_argument('--results', type=str, default=ROOT/'results', help='Results dataset location.')
-    parser.add_argument('--threads', type=int, default=100, help='Download dataset max threads')
+    parser.add_argument('--threads', type=int, default=100, help='Max threads (only works for --download-images)')
     opt = parser.parse_args()
 
     # To test for debugging, uncomment one of these & you can step through

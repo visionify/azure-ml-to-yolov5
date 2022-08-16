@@ -1,45 +1,50 @@
-# Azure ML to Yolov5 Pipeline.
+# Azure ML to Yolov5 Pipeline
 
 ## Usage
 
 ```bash
-$ python3 aml-to-yolov5.py --help
-usage: aml-to-yolov5.py [-h] [--aml-json AML_JSON] [--force-download] [--shelf-dataset] [--object-dataset] [--results RESULTS] [--threads THREADS]
+python3 az2yolo.py --help
+
+usage: az2yolo.py [-h] [--json JSON] [--clean] [--download-images] [--create-shelf-dataset] [--create-object-dataset] [--threads THREADS]
 
 optional arguments:
-  -h, --help           show this help message and exit
-  --aml-json AML_JSON  Path to input JSON file
-  --force-download     Force re-download of images based on JSON
-  --shelf-dataset      Create shelf-dataset
-  --object-dataset     Create object-dataset
-  --results RESULTS    Results dataset location.
-  --threads THREADS    Download dataset max threads
-```
+  -h, --help            show this help message and exit
+  --json JSON           Path to input JSON file
+  --clean               Clean all past datasets
+  --download-images     Download images specified in JSON
+  --create-shelf-dataset
+                        Create shelf-dataset
+  --create-object-dataset
+                        Create object-dataset
+  --threads THREADS     Max threads (only works for --download-images)
+  ```
 
-- A starting JSON file is needed to start this pipeline. This can be downloaded via Azure Machine Learning Studio - and export the dataset as a COCO JSON Format. Please make sure the Blob Storage provides anonymous read access to the images.
-
-- Run this command to download all the images.
-
-```bash
-python3 aml-to-yolov5.py --aml-json aml-export.json --download-images
-```
-
-- Run this command to create Yolov5 annotations
+- Start by cleaning any prior datasets.
 
 ```bash
-python3 aml-to-yolov5.py --aml-json aml-export.json --annotate
+python3 az2yolo.py --clean
 ```
 
-- Run this command to create a shelf dataset
+- A starting JSON file is needed to start this pipeline. This can be downloaded via Azure Machine Learning Studio - and export the dataset as a COCO JSON Format. Please make sure the Blob Storage provides anonymous read access to the images. Copy over the JSON file in this folder.
+
+- Run this command to download all the images mentioned in the COCO json dataset & create a yolov5 dataset from it.
 
 ```bash
-python3 aml-to-yolov5.py --aml-json aml-export.json --create-shelf-dataset
+python3 az2yolo.py --json data.json --download-images
 ```
 
-- Run this command to create an object model dataset (shelves are cropped, and object bounding boxes are normalized)
+- Create a shelf dataset. (Only use shelf labels)
 
 ```bash
-python3 aml-to-yolov5.py --aml-json aml-export.json --create-object-dataset
+python3 az2yolo.py --json data.json --create-shelf-dataset
 ```
 
-- The results are alwyas in specified locations (Full dataset: `results`, Shelf dataset: `shelf-dataset`, Object dataset: `object-dataset`)
+- Run this command to create an object dataset. (Crop shelves and renormalize other classes to match shelf boundaries)
+
+```bash
+python3 az2yolo.py --json data.json --create-object-dataset
+```
+
+- The results are in these folders (Original download: `download`, Full Yolov5 dataset: `results`, Shelf dataset: `shelf-dataset`, Object dataset: `object-dataset`)
+
+- Questions: [hmurari@visionify.ai](mailto:hmurari@visionify.ai)
