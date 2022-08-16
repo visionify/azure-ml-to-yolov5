@@ -72,7 +72,7 @@ def download_dataset(opt, images, annotations, categories):
     # Internal function for threaded images download.
 
     LOGGER.info('Deleting downloads folder')
-    RESULTS = Path.resolve(opt.results)
+    RESULTS = Path('results')
     DOWNLOAD = Path('download')
 
     # Delete dataset
@@ -126,7 +126,7 @@ def download_dataset(opt, images, annotations, categories):
 def create_complete_dataset(opt, images, annotations, categories):
 
     DOWNLOAD = Path('download')
-    RESULTS = Path.resolve(opt.results)
+    RESULTS = Path('results')
 
     # Create image dict
     # images = {'%g' % x['id']: x for x in annotations}
@@ -272,13 +272,13 @@ def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
     y[3] = h * (x[1] + x[3] / 2) + padh  # bottom right y
     return y
 
-def _xyxy2xywh(x):
+def _xyxy2xywh(x, w=1280, h=960):
     # Convert x4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
     y = np.copy(x)
-    y[0] = (x[0] + x[2]) / 2  # x center
-    y[1] = (x[1] + x[3]) / 2  # y center
-    y[2] = x[2] - x[0]  # width
-    y[3] = x[3] - x[1]  # height
+    y[0] = ((x[0] + x[2]) / 2) / w  # x center
+    y[1] = ((x[1] + x[3]) / 2) / h  # y center
+    y[2] = (x[2] - x[0]) / w  # width
+    y[3] = (x[3] - x[1]) / h  # height
     return y
 
 def _new_obj_coords(obj, sh):
@@ -291,10 +291,10 @@ def _new_obj_coords(obj, sh):
         o[1] >= s[1] and
         o[2] <= s[2] and
         o[3] <= s[3]):
-        # Scale the object coords based on new shelf crop.
-        sw, sh = s[2] - s[0], s[3] - s[1]
-        p = np.array([o[0]/sw, o[1]/sh, o[2]/sw, o[3]/sh])
-        q = _xyxy2xywh(p)
+        # translate the bbox
+        p = o[0]-s[0], o[1]-s[1], o[2]-s[0], o[3]-s[1]
+        w, h = s[2] - s[0], s[3] - s[1]
+        q = _xyxy2xywh(p, w, h)
         return np.array([clsid, q[0], q[1], q[2], q[3]])
     else:
         return None
@@ -323,7 +323,6 @@ def _process_img_obj_dataset(image_fname):
     # 0 - background
     # 1 - bottle
     # 2 - void
-
 
     # Read shelf annotations
     data = pd.read_csv(ann_fname, names=['clsid', 'x', 'y', 'w', 'h'], sep='\s+')
@@ -442,7 +441,7 @@ def parse_opt():
 
     # To test for debugging, uncomment one of these & you can step through
     # opt.create_shelf_dataset = True
-    # opt.create_object_dataset = True
+    opt.create_object_dataset = True
 
     return opt
 
