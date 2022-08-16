@@ -263,20 +263,6 @@ def create_shelf_dataset(opt):
 
     LOGGER.info(f'✅ Yolov5 Shelf dataset creation complete: {RESULTS}')
 
-
-def _new_obj_coords(obj, sh):
-    # Return new shelf image based coordinates if object within shelf.
-    # Else return None.
-    clsid, ox, oy, ow, oh = obj
-    sx, sy, sw, sh = sh[1:]
-    if (ox - ow/2 >= sx - sw/2 and
-        oy - oh/2 >= sy - sh/2 and
-        ox + ow/2 <= sx + sw/2 and
-        oy + oh/2 <= sy + sh/2):
-        return np.array([clsid, ox-(sx-sw/2), oy-(sy-sh/2), ow/sw, oh/sh])
-    else:
-        return None
-
 def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
     # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
     y = np.copy(x)
@@ -285,6 +271,33 @@ def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
     y[2] = w * (x[0] + x[2] / 2) + padw  # bottom right x
     y[3] = h * (x[1] + x[3] / 2) + padh  # bottom right y
     return y
+
+def _xyxy2xywh(x):
+    # Convert x4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    y = np.copy(x)
+    y[0] = (x[0] + x[2]) / 2  # x center
+    y[1] = (x[1] + x[3]) / 2  # y center
+    y[2] = x[2] - x[0]  # width
+    y[3] = x[3] - x[1]  # height
+    return y
+
+def _new_obj_coords(obj, sh):
+    # Return new shelf image based coordinates if object within shelf.
+    # Else return None.
+    clsid = obj[0]
+    o = _xywhn2xyxy(obj[1:])
+    s  = _xywhn2xyxy(sh[1:])
+    if (o[0] >= s[0] and
+        o[1] >= s[1] and
+        o[2] <= s[2] and
+        o[3] <= s[3]):
+        # Scale the object coords based on new shelf crop.
+        sw, sh = s[2] - s[0], s[3] - s[1]
+        p = np.array([o[0]/sw, o[1]/sh, o[2]/sw, o[3]/sh])
+        q = _xyxy2xywh(p)
+        return np.array([clsid, q[0], q[1], q[2], q[3]])
+    else:
+        return None
 
 def _process_img_obj_dataset(image_fname):
     DOWNLOAD = Path('download')
