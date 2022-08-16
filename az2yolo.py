@@ -340,12 +340,12 @@ def _process_img_obj_dataset(image_fname):
             val_image_fname = shelf_img_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
             val_ann_fname = shelf_ann_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
             shelf_image.save(val_image_fname)
-            np.savetxt(val_ann_fname, shelf_annotations, delimiter=' ')
+            np.savetxt(val_ann_fname, shelf_annotations, fmt='%d %.5f %.5f %.5f %.5f')
         else:
             shelf_img_fname = shelf_img_fname.replace(DOWNLOAD.name, RESULTS.name)
             shelf_ann_fname = shelf_ann_fname.replace(DOWNLOAD.name, RESULTS.name)
             shelf_image.save(shelf_img_fname)
-            np.savetxt(shelf_ann_fname, shelf_annotations, delimiter=' ')
+            np.savetxt(shelf_ann_fname, shelf_annotations, fmt='%d %.5f %.5f %.5f %.5f')
 
 def create_object_dataset(opt):
     # Creating object dataset is tricky.
@@ -429,7 +429,7 @@ def parse_opt():
 
     # To test for debugging, uncomment one of these & you can step through
     # opt.create_shelf_dataset = True
-    opt.create_object_dataset = True
+    # opt.create_object_dataset = True
 
     return opt
 
