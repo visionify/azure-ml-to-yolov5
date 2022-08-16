@@ -11,7 +11,9 @@ import tqdm
 import glob
 from urllib.request import urlretrieve
 import threading
-import csv
+import pandas as pd
+from PIL import Image
+import multiprocessing
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -39,6 +41,31 @@ def _read_json(opt):
     annotations = data['annotations']
     categories = data['categories']
     return images, annotations, categories
+
+def delete_dataset(opt):
+    # Internal function for threaded images download.
+
+    LOGGER.info('Deleting download folder')
+    DOWNLOAD = Path('download')
+    if os.path.exists(DOWNLOAD):
+        shutil.rmtree(DOWNLOAD, ignore_errors=True)
+
+    LOGGER.info('Deleting results folder')
+    RESULTS = Path('results')
+    if os.path.exists(RESULTS):
+        shutil.rmtree(RESULTS, ignore_errors=True)
+
+    LOGGER.info('Deleting shelf-dataset')
+    SHELF = Path('shelf-dataset')
+    if os.path.exists(SHELF):
+        shutil.rmtree(SHELF, ignore_errors=True)
+
+    LOGGER.info('Deleting object-dataset')
+    OBJECT = Path('object-dataset')
+    if os.path.exists(OBJECT):
+        shutil.rmtree(OBJECT, ignore_errors=True)
+
+    LOGGER.info(f'✅ Done.')
 
 
 def download_dataset(opt, images, annotations, categories):
@@ -179,7 +206,7 @@ def create_complete_dataset(opt, images, annotations, categories):
 
     LOGGER.info(f'✅ Yolov5 Dataset creation complete: {RESULTS}')
 
-def create_shelf_dataset(opt, images, annotations, categories):
+def create_shelf_dataset(opt):
     # Basically creating shelf dataset is similar to creating entire dataset.
     # We just need to ignore all the object annotations. We will only focus on
     # Shelf annotations.
@@ -206,27 +233,19 @@ def create_shelf_dataset(opt, images, annotations, categories):
             LOGGER.error(f'Image/Annotation does not exist: {image_fname}: {ann_fname}')
 
         image_annotations = []
-        with open(ann_fname, 'r') as f:
-            ann_csv = csv.reader(f, delimiter=' ')
-            for row in ann_csv:
-                # Only consider shelf class
-                if len(row) > 4 and int(row[0]) == 5:
-                    row[0] = 1
-                    image_annotations.append(row)
+        data = pd.read_csv(ann_fname, names=['clsid', 'x', 'y', 'w', 'h'], sep='\s+')
+        # Filter out only shelf class
+        shelf_data = data['clsid'] == 5
 
         rand_num = random.random()
         if rand_num < 0.2:
             val_image_fname = result_image_fname.replace('train/', 'valid/')
             val_ann_fname = result_ann_fname.replace('train/', 'valid/')
             shutil.copy(image_fname, val_image_fname)
-            with open(val_ann_fname, 'w') as f:
-                csvwriter = csv.writer(f)
-                csvwriter.writerows(image_annotations)
+            shelf_data.to_csv(val_ann_fname)
         else:
             shutil.copy(image_fname, result_image_fname)
-            with open(result_ann_fname, 'w') as f:
-                csvwriter = csv.writer(f)
-                csvwriter.writerows(image_annotations)
+            shelf_data.to_csv(result_ann_fname)
 
     # Write data.yaml file
     LOGGER.info('Writing data.yaml')
@@ -245,11 +264,130 @@ def create_shelf_dataset(opt, images, annotations, categories):
     LOGGER.info(f'✅ Yolov5 Shelf dataset creation complete: {RESULTS}')
 
 
-def create_object_dataset(opt, images, annotations, categories):
-    pass
+def _new_obj_coords(obj, sh):
+    # Return new shelf image based coordinates if object within shelf.
+    # Else return None.
+    clsid, ox, oy, ow, oh = obj
+    sx, sy, sw, sh = sh[1:]
+    if (ox - ow/2 >= sx - sw/2 and
+        oy - oh/2 >= sy - sh/2 and
+        ox + ow/2 <= sx + sw/2 and
+        oy + oh/2 <= sy + sh/2):
+        return np.array([clsid, ox-(sx-sw/2), oy-(sy-sh/2), ow/sw, oh/sh])
+    else:
+        return None
 
+def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
+    # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    y = np.copy(x)
+    y[0] = w * (x[0] - x[2] / 2) + padw  # top left x
+    y[1] = h * (x[1] - x[3] / 2) + padh  # top left y
+    y[2] = w * (x[0] + x[2] / 2) + padw  # bottom right x
+    y[3] = h * (x[1] + x[3] / 2) + padh  # bottom right y
+    return y
+
+def _process_img_obj_dataset(image_fname):
+    ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
+    if (not os.path.exists(image_fname) or
+        not os.path.exists(ann_fname)):
+        LOGGER.error(f'Image/Annotation does not exist: {image_fname}: {ann_fname}')
+
+    # TXT File annotations:
+    # 0 - bottle
+    # 1 - can
+    # 2 - carton
+    # 3 - container
+    # 4 - void
+    # 5 - shelf
+    # 6 - packet
+    # 7 - box
+    # 8 - cup
+
+    # New labels for objects:
+    # 0 - background
+    # 1 - bottle
+    # 2 - void
+
+
+    # Read shelf annotations
+    data = pd.read_csv(ann_fname, names=['clsid', 'x', 'y', 'w', 'h'], sep='\s+')
+    shelves = data[data['clsid'] == 5].copy()
+    voids = data[data['clsid'] == 4].copy()
+    voids['clsid'] = 2
+    objects = data[(data['clsid'] != 4) & (data['clsid'] != 5)].copy()
+    objects['clsid'] = 1
+    objvoids = pd.concat([objects, voids], ignore_index=True)
+    image = Image.open(image_fname)
+
+    # Sort the shelves based on y coordinate
+    shelves.sort_values(by='y')
+    for idx, shelf in enumerate(shelves.values):
+        shelf_ann_fname = ann_fname.replace('.txt', f'-shelf-{idx}.txt')
+        shelf_img_fname = image_fname.replace('.jpg', f'-shelf-{idx}.jpg')
+        shelf_bb = _xywhn2xyxy(shelf[1:])
+        shelf_image = image.crop(shelf_bb)
+        shelf_annotations = np.empty((0, 5))
+        for obj in objvoids.values:
+            new_obj = _new_obj_coords(obj, shelf)
+            if new_obj is not None:
+                shelf_annotations = np.append(shelf_annotations, np.reshape(new_obj, (1, 5)), axis=0)
+
+        rand_num = random.random()
+        if rand_num < 0.2:
+            val_image_fname = shelf_img_fname.replace('train/', 'valid/')
+            val_ann_fname = shelf_ann_fname.replace('train/', 'valid/')
+            shelf_image.save(val_image_fname)
+            np.savetxt(val_ann_fname, shelf_annotations, delimiter=' ')
+        else:
+            shelf_image.save(shelf_img_fname)
+            np.savetxt(shelf_ann_fname, shelf_annotations, delimiter=' ')
+
+
+def create_object_dataset(opt):
+    # Creating object dataset is tricky.
+    # First we need to crop the shelf - each shelf will have its own annotations.
+    # Then adjust each object to match the new annotations.
+    DOWNLOAD = Path('download')
+    RESULTS = Path('object-dataset')
+
+    # Create fresh dataset each time.
+    if os.path.exists(RESULTS):
+        shutil.rmtree(RESULTS, ignore_errors=True)
+
+    os.makedirs(RESULTS)
+    os.makedirs(RESULTS/'train')
+    os.makedirs(RESULTS/'train/images')
+    os.makedirs(RESULTS/'train/labels')
+    os.makedirs(RESULTS/'valid')
+    os.makedirs(RESULTS/'valid/images')
+    os.makedirs(RESULTS/'valid/labels')
+
+    LOGGER.info('Creating object/void dataset')
+
+    with multiprocessing.Pool(processes=4) as pool:
+        for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
+            pool.map(_process_img_obj_dataset, image_fname)
+
+    # Write data.yaml file
+    LOGGER.info('Writing data.yaml')
+    labels = ['background', 'bottle', 'void']
+    labels_cnt = len(labels)
+    labels = json.dumps(labels)
+    yaml_data = [
+        f'train: {RESULTS.name}/train\n',
+        f'val: {RESULTS.name}/valid\n\n',
+        f'nc: {labels_cnt}\n',
+        f'names: {labels}\n'
+    ]
+    with open(RESULTS/'data.yaml', 'w') as f:
+        f.writelines(yaml_data)
+
+    LOGGER.info(f'✅ Yolov5 Object dataset creation complete: {RESULTS}')
 
 def main(opt):
+    if opt.clear is True:
+        delete_dataset(opt)
+
     if opt.aml_json is not None and os.path.exists(opt.aml_json):
         LOGGER.info('Using AML json file: {}'.format(opt.aml_json))
     else:
@@ -271,16 +409,16 @@ def main(opt):
         create_complete_dataset(opt, images, annotations, categories)
 
     if opt.create_shelf_dataset is True:
-        create_shelf_dataset(opt, images, annotations, categories)
+        create_shelf_dataset(opt)
 
     if opt.create_object_dataset is True:
-        create_object_dataset(opt, images, annotations, categories)
-
+        create_object_dataset(opt)
 
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--aml-json', type=str, default=ROOT/'azure-export-data.json', help='Path to input JSON file')
+    parser.add_argument('--clear', action='store_true', help='Clean all past datasets')
     parser.add_argument('--download-images', action='store_true', help='Download images specified in JSON')
     parser.add_argument('--create-dataset', action='store_true', help='Create complete yolov5 dataset (all classes)')
     parser.add_argument('--create-shelf-dataset', action='store_true', help='Create shelf-dataset')
@@ -288,7 +426,11 @@ def parse_opt():
     parser.add_argument('--results', type=str, default=ROOT/'results', help='Results dataset location.')
     parser.add_argument('--threads', type=int, default=100, help='Download dataset max threads')
     opt = parser.parse_args()
-    opt.create_shelf_dataset = True
+
+    # To test for debugging, uncomment one of these & you can step through
+    # opt.create_object_dataset = True
+    opt.create_object_dataset = True
+
     return opt
 
 if __name__ == '__main__':
