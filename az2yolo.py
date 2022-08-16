@@ -27,7 +27,7 @@ def _download_file_per_thread(url, file_name):
     urlretrieve(url, file_name)
 
 def _read_json(opt):
-    with open(opt.aml_json, 'r') as f:
+    with open(opt.json, 'r') as f:
         data = json.load(f)
 
     # Create easy to use arrays
@@ -365,8 +365,7 @@ def create_object_dataset(opt):
     LOGGER.info('Creating object/void dataset')
 
     with multiprocessing.Pool(processes=4) as pool:
-        for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
-            pool.map(_process_img_obj_dataset, image_fname)
+        pool.map(_process_img_obj_dataset, glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg'))
 
     # Write data.yaml file
     LOGGER.info('Writing data.yaml')
@@ -385,13 +384,14 @@ def create_object_dataset(opt):
     LOGGER.info(f'✅ Yolov5 Object dataset creation complete: {RESULTS}')
 
 def main(opt):
-    if opt.clear is True:
+    if opt.clean is True:
         delete_dataset(opt)
+        return
 
-    if opt.aml_json is not None and os.path.exists(opt.aml_json):
-        LOGGER.info('Using AML json file: {}'.format(opt.aml_json))
+    if opt.json is not None and os.path.exists(opt.json):
+        LOGGER.info('Using AML json file: {}'.format(opt.json))
     else:
-        LOGGER.error('Unable to find JSON file: {}'.format(opt.aml_json))
+        LOGGER.error('Unable to find JSON file: {}'.format(opt.json))
         return -1
 
     # Check if any actions are specified.
@@ -404,8 +404,6 @@ def main(opt):
 
     if opt.download_images is True:
         download_dataset(opt, images, annotations, categories)
-
-    if opt.create_dataset is True:
         create_complete_dataset(opt, images, annotations, categories)
 
     if opt.create_shelf_dataset is True:
@@ -417,10 +415,9 @@ def main(opt):
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--aml-json', type=str, default=ROOT/'azure-export-data.json', help='Path to input JSON file')
-    parser.add_argument('--clear', action='store_true', help='Clean all past datasets')
+    parser.add_argument('--json', type=str, default=ROOT/'azure-export-data.json', help='Path to input JSON file')
+    parser.add_argument('--clean', action='store_true', help='Clean all past datasets')
     parser.add_argument('--download-images', action='store_true', help='Download images specified in JSON')
-    parser.add_argument('--create-dataset', action='store_true', help='Create complete yolov5 dataset (all classes)')
     parser.add_argument('--create-shelf-dataset', action='store_true', help='Create shelf-dataset')
     parser.add_argument('--create-object-dataset', action='store_true', help='Create object-dataset')
     parser.add_argument('--results', type=str, default=ROOT/'results', help='Results dataset location.')
@@ -428,7 +425,7 @@ def parse_opt():
     opt = parser.parse_args()
 
     # To test for debugging, uncomment one of these & you can step through
-    # opt.create_object_dataset = True
+    # opt.create_shelf_dataset = True
     opt.create_object_dataset = True
 
     return opt
