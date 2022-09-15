@@ -16,7 +16,7 @@ from PIL import Image
 import multiprocessing
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
+ROOT = FILE.parents[0]  # az2yolo root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
@@ -232,20 +232,21 @@ def create_shelf_dataset(opt):
             not os.path.exists(ann_fname)):
             LOGGER.error(f'Image/Annotation does not exist: {image_fname}: {ann_fname}')
 
-        image_annotations = []
         data = pd.read_csv(ann_fname, names=['clsid', 'x', 'y', 'w', 'h'], sep='\s+')
+
         # Filter out only shelf class
-        shelf_data = data['clsid'] == 5
+        shelf_data = data[data['clsid'] == 5].copy()
+        shelf_data['clsid'] = 1
 
         rand_num = random.random()
         if rand_num < 0.2:
             val_image_fname = result_image_fname.replace('train/', 'valid/')
             val_ann_fname = result_ann_fname.replace('train/', 'valid/')
             shutil.copy(image_fname, val_image_fname)
-            shelf_data.to_csv(val_ann_fname)
+            shelf_data.to_csv(val_ann_fname, index=False, header=False, sep=' ', float_format='%.5f')
         else:
             shutil.copy(image_fname, result_image_fname)
-            shelf_data.to_csv(result_ann_fname)
+            shelf_data.to_csv(result_ann_fname, index=False, header=False, sep=' ', float_format='%.5f')
 
     # Write data.yaml file
     LOGGER.info('Writing data.yaml')
@@ -441,7 +442,7 @@ def parse_opt():
 
     # To test for debugging, uncomment one of these & you can step through
     # opt.create_shelf_dataset = True
-    opt.create_object_dataset = True
+    # opt.create_object_dataset = True
 
     return opt
 
