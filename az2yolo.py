@@ -23,6 +23,12 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from utils.general import LOGGER
 
+# Paths
+DOWNLOAD = Path('download')
+SHELF_OBJECT = Path('shelf-object-dataset')
+OBJECT = Path('object-dataset')
+SHELF = Path('shelf-dataset')
+
 def _download_file_per_thread(url, file_name):
     urlretrieve(url, file_name)
 
@@ -46,14 +52,12 @@ def delete_dataset(opt):
     # Internal function for threaded images download.
 
     LOGGER.info('Deleting download folder')
-    DOWNLOAD = Path('download')
     if os.path.exists(DOWNLOAD):
         shutil.rmtree(DOWNLOAD, ignore_errors=True)
 
     LOGGER.info('Deleting results folder')
-    RESULTS = Path('results')
-    if os.path.exists(RESULTS):
-        shutil.rmtree(RESULTS, ignore_errors=True)
+    if os.path.exists(SHELF_OBJECT):
+        shutil.rmtree(SHELF_OBJECT, ignore_errors=True)
 
     LOGGER.info('Deleting shelf-dataset')
     SHELF = Path('shelf-dataset')
@@ -72,15 +76,13 @@ def download_dataset(opt, images, annotations, categories):
     # Internal function for threaded images download.
 
     LOGGER.info('Deleting downloads folder')
-    RESULTS = Path('results')
-    DOWNLOAD = Path('download')
 
     # Delete dataset
     if os.path.exists(DOWNLOAD):
         shutil.rmtree(DOWNLOAD, ignore_errors=True)
 
-    if os.path.exists(RESULTS):
-        shutil.rmtree(RESULTS, ignore_errors=True)
+    if os.path.exists(SHELF_OBJECT):
+        shutil.rmtree(SHELF_OBJECT, ignore_errors=True)
 
 
     # Create yolov5 directory structure
@@ -90,13 +92,13 @@ def download_dataset(opt, images, annotations, categories):
     os.makedirs(DOWNLOAD/'train/images')
     os.makedirs(DOWNLOAD/'train/labels')
 
-    os.makedirs(RESULTS)
-    os.makedirs(RESULTS/'train')
-    os.makedirs(RESULTS/'train/images')
-    os.makedirs(RESULTS/'train/labels')
-    os.makedirs(RESULTS/'valid')
-    os.makedirs(RESULTS/'valid/images')
-    os.makedirs(RESULTS/'valid/labels')
+    os.makedirs(SHELF_OBJECT)
+    os.makedirs(SHELF_OBJECT/'train')
+    os.makedirs(SHELF_OBJECT/'train/images')
+    os.makedirs(SHELF_OBJECT/'train/labels')
+    os.makedirs(SHELF_OBJECT/'valid')
+    os.makedirs(SHELF_OBJECT/'valid/images')
+    os.makedirs(SHELF_OBJECT/'valid/labels')
 
     # Create yolov5 directory structure
     LOGGER.info('Downloading images')
@@ -124,9 +126,6 @@ def download_dataset(opt, images, annotations, categories):
 
 
 def create_complete_dataset(opt, images, annotations, categories):
-
-    DOWNLOAD = Path('download')
-    RESULTS = Path('results')
 
     # Create image dict
     # images = {'%g' % x['id']: x for x in annotations}
@@ -174,20 +173,20 @@ def create_complete_dataset(opt, images, annotations, categories):
     labels_cnt = len(labels)
     labels = json.dumps(labels)
     yaml_data = [
-        f'train: {RESULTS.name}/train\n',
-        f'val: {RESULTS.name}/valid\n\n',
+        f'train: {SHELF_OBJECT.name}/train\n',
+        f'val: {SHELF_OBJECT.name}/valid\n\n',
         f'nc: {labels_cnt}\n',
         f'names: {labels}\n'
     ]
-    with open(RESULTS/'data.yaml', 'w') as f:
+    with open(SHELF_OBJECT/'data.yaml', 'w') as f:
         f.writelines(yaml_data)
 
     # Split dataset between train & val
     LOGGER.info('Splitting dataset')
     for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
-        result_image_fname = image_fname.replace(DOWNLOAD.name, RESULTS.name)
+        result_image_fname = image_fname.replace(DOWNLOAD.name, SHELF_OBJECT.name)
         ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
-        result_ann_fname = ann_fname.replace(DOWNLOAD.name, RESULTS.name)
+        result_ann_fname = ann_fname.replace(DOWNLOAD.name, SHELF_OBJECT.name)
 
         if (not os.path.exists(image_fname) or
             not os.path.exists(ann_fname)):
@@ -204,29 +203,28 @@ def create_complete_dataset(opt, images, annotations, categories):
             shutil.copy(ann_fname, result_ann_fname)
 
 
-    LOGGER.info(f'✅ Yolov5 Dataset creation complete: {RESULTS}')
+    LOGGER.info(f'✅ Yolov5 Shelf-Object Dataset creation complete: {SHELF_OBJECT}')
 
 def create_shelf_dataset(opt):
     # Basically creating shelf dataset is similar to creating entire dataset.
     # We just need to ignore all the object annotations. We will only focus on
     # Shelf annotations.
-    DOWNLOAD = Path('download')
-    RESULTS = Path('shelf-dataset')
+    SHELF = Path('shelf-dataset')
 
-    if os.path.exists(RESULTS):
-        shutil.rmtree(RESULTS, ignore_errors=True)
-    os.makedirs(RESULTS)
-    os.makedirs(RESULTS/'train')
-    os.makedirs(RESULTS/'train/images')
-    os.makedirs(RESULTS/'train/labels')
-    os.makedirs(RESULTS/'valid')
-    os.makedirs(RESULTS/'valid/images')
-    os.makedirs(RESULTS/'valid/labels')
+    if os.path.exists(SHELF):
+        shutil.rmtree(SHELF, ignore_errors=True)
+    os.makedirs(SHELF)
+    os.makedirs(SHELF/'train')
+    os.makedirs(SHELF/'train/images')
+    os.makedirs(SHELF/'train/labels')
+    os.makedirs(SHELF/'valid')
+    os.makedirs(SHELF/'valid/images')
+    os.makedirs(SHELF/'valid/labels')
 
     for image_fname in tqdm.tqdm(glob.glob(f'{DOWNLOAD.name}/train/images/*.jpg')):
         ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
-        result_image_fname = image_fname.replace(DOWNLOAD.name, RESULTS.name)
-        result_ann_fname = ann_fname.replace(DOWNLOAD.name, RESULTS.name)
+        result_image_fname = image_fname.replace(DOWNLOAD.name, SHELF.name)
+        result_ann_fname = ann_fname.replace(DOWNLOAD.name, SHELF.name)
 
         if (not os.path.exists(image_fname) or
             not os.path.exists(ann_fname)):
@@ -254,15 +252,15 @@ def create_shelf_dataset(opt):
     labels_cnt = len(labels)
     labels = json.dumps(labels)
     yaml_data = [
-        f'train: {RESULTS.name}/train\n',
-        f'val: {RESULTS.name}/valid\n\n',
+        f'train: {SHELF.name}/train\n',
+        f'val: {SHELF.name}/valid\n\n',
         f'nc: {labels_cnt}\n',
         f'names: {labels}\n'
     ]
-    with open(RESULTS/'data.yaml', 'w') as f:
+    with open(SHELF/'data.yaml', 'w') as f:
         f.writelines(yaml_data)
 
-    LOGGER.info(f'✅ Yolov5 Shelf dataset creation complete: {RESULTS}')
+    LOGGER.info(f'✅ Yolov5 Shelf dataset creation complete: {SHELF}')
 
 def _xywhn2xyxy(x, w=1280, h=960, padw=0, padh=0):
     # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
@@ -301,8 +299,6 @@ def _new_obj_coords(obj, sh):
         return None
 
 def _process_img_obj_dataset(image_fname):
-    DOWNLOAD = Path('download')
-    RESULTS = Path('object-dataset')
 
     ann_fname = image_fname.replace('images/', 'labels/').replace('.jpg', '.txt')
     if (not os.path.exists(image_fname) or
@@ -350,13 +346,13 @@ def _process_img_obj_dataset(image_fname):
 
         rand_num = random.random()
         if rand_num < 0.2:
-            val_image_fname = shelf_img_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
-            val_ann_fname = shelf_ann_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, RESULTS.name)
+            val_image_fname = shelf_img_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, OBJECT.name)
+            val_ann_fname = shelf_ann_fname.replace('train/', 'valid/').replace(DOWNLOAD.name, OBJECT.name)
             shelf_image.save(val_image_fname)
             np.savetxt(val_ann_fname, shelf_annotations, fmt='%d %.5f %.5f %.5f %.5f')
         else:
-            shelf_img_fname = shelf_img_fname.replace(DOWNLOAD.name, RESULTS.name)
-            shelf_ann_fname = shelf_ann_fname.replace(DOWNLOAD.name, RESULTS.name)
+            shelf_img_fname = shelf_img_fname.replace(DOWNLOAD.name, OBJECT.name)
+            shelf_ann_fname = shelf_ann_fname.replace(DOWNLOAD.name, OBJECT.name)
             shelf_image.save(shelf_img_fname)
             np.savetxt(shelf_ann_fname, shelf_annotations, fmt='%d %.5f %.5f %.5f %.5f')
 
@@ -364,20 +360,18 @@ def create_object_dataset(opt):
     # Creating object dataset is tricky.
     # First we need to crop the shelf - each shelf will have its own annotations.
     # Then adjust each object to match the new annotations.
-    DOWNLOAD = Path('download')
-    RESULTS = Path('object-dataset')
 
     # Create fresh dataset each time.
-    if os.path.exists(RESULTS):
-        shutil.rmtree(RESULTS, ignore_errors=True)
+    if os.path.exists(OBJECT):
+        shutil.rmtree(OBJECT, ignore_errors=True)
 
-    os.makedirs(RESULTS)
-    os.makedirs(RESULTS/'train')
-    os.makedirs(RESULTS/'train/images')
-    os.makedirs(RESULTS/'train/labels')
-    os.makedirs(RESULTS/'valid')
-    os.makedirs(RESULTS/'valid/images')
-    os.makedirs(RESULTS/'valid/labels')
+    os.makedirs(OBJECT)
+    os.makedirs(OBJECT/'train')
+    os.makedirs(OBJECT/'train/images')
+    os.makedirs(OBJECT/'train/labels')
+    os.makedirs(OBJECT/'valid')
+    os.makedirs(OBJECT/'valid/images')
+    os.makedirs(OBJECT/'valid/labels')
 
     LOGGER.info('Creating object/void dataset')
 
@@ -390,15 +384,15 @@ def create_object_dataset(opt):
     labels_cnt = len(labels)
     labels = json.dumps(labels)
     yaml_data = [
-        f'train: {RESULTS.name}/train\n',
-        f'val: {RESULTS.name}/valid\n\n',
+        f'train: {OBJECT.name}/train\n',
+        f'val: {OBJECT.name}/valid\n\n',
         f'nc: {labels_cnt}\n',
         f'names: {labels}\n'
     ]
-    with open(RESULTS/'data.yaml', 'w') as f:
+    with open(OBJECT/'data.yaml', 'w') as f:
         f.writelines(yaml_data)
 
-    LOGGER.info(f'✅ Yolov5 Object dataset creation complete: {RESULTS}')
+    LOGGER.info(f'✅ Yolov5 Object dataset creation complete: {OBJECT}')
 
 def main(opt):
     if opt.clean is True:
